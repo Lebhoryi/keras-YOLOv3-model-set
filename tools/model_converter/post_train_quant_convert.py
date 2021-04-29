@@ -17,9 +17,10 @@ from common.utils import get_custom_objects
 #tf.enable_eager_execution()
 
 
-def post_train_quant_convert(keras_model_file, annotation_file, sample_num, model_input_shape, output_file):
+def post_train_quant_convert(keras_model_file, annotation_file, sample_num, model_input_shape,
+                             output_file, args):
     #get input_shapes for converter
-    input_shapes=list((1,)+model_input_shape+(3,))
+    # input_shapes=list((1,)+model_input_shape+(1,))
 
     with open(annotation_file) as f:
         annotation_lines = f.readlines()
@@ -36,6 +37,9 @@ def post_train_quant_convert(keras_model_file, annotation_file, sample_num, mode
             image, _ = get_ground_truth_data(annotation_lines[i], model_input_shape, augment=True)
             i = (i+1) % n
             image = np.array([image], dtype=np.float32)
+            if not args.channel:
+                image = image[..., -1]
+                image = np.expand_dims(image, axis=-1)
             yield [image]
 
 
@@ -61,12 +65,15 @@ def main():
     parser.add_argument('--model_input_shape', type=str, help='model image input shape as <height>x<width>, default=%(default)s', default='416x416')
     parser.add_argument('--output_file', required=True, type=str, help='output tflite model file')
 
+    parser.add_argument('-c', '--channel', help='3 channel or 1 channel', action='store_true')
+
     args = parser.parse_args()
     height, width = args.model_input_shape.split('x')
     model_input_shape = (int(height), int(width))
-    assert (model_input_shape[0]%32 == 0 and model_input_shape[1]%32 == 0), 'model_input_shape should be multiples of 32'
+    # assert (model_input_shape[0]%32 == 0 and model_input_shape[1]%32 == 0), 'model_input_shape should be multiples of 32'
 
-    post_train_quant_convert(args.keras_model_file, args.annotation_file, args.sample_num, model_input_shape, args.output_file)
+    post_train_quant_convert(args.keras_model_file, args.annotation_file, args.sample_num,
+                             model_input_shape, args.output_file, args)
 
 
 

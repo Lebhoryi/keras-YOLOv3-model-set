@@ -50,13 +50,17 @@ parser.add_argument(
     '-f',
     '--fixed_input_shape',
     help='Use fixed input shape specified in cfg.',
-    action='store_true')
+    action='store_false')
 parser.add_argument(
     '-r',
     '--yolo4_reorder',
     help='Reorder output tensors for YOLOv4 cfg and weights file.',
     action='store_true')
-
+parser.add_argument(
+    '-c',
+    '--channel',
+    help='3 channel or 1 channel',
+    action='store_false')
 
 def unique_config_sections(config_file):
     """Convert all config sections to have unique names.
@@ -113,10 +117,11 @@ def _main(args):
     height = int(cfg_parser['net_0']['height']) if 'net_0' in cfg_parser.sections() else None
 
     print('Creating Keras model.')
+    channel = 3 if args.channel else 1
     if width and height and args.fixed_input_shape:
-        input_layer = Input(shape=(height, width, 3), name='image_input')
+        input_layer = Input(shape=(height, width, channel), name='image_input')
     else:
-        input_layer = Input(shape=(None, None, 3), name='image_input')
+        input_layer = Input(shape=(None, None, channel), name='image_input')
     prev_layer = input_layer
     all_layers = []
 

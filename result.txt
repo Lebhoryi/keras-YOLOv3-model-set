@@ -1,0 +1,4 @@
+precision: 85.0% 
+recall: 71.0% 
+accuracy: 83.0% 
+f1_scores: 7737.0%

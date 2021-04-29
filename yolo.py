@@ -25,7 +25,7 @@ from yolo2.model import get_yolo2_model, get_yolo2_inference_model
 from yolo2.postprocess_np import yolo2_postprocess_np
 from common.data_utils import preprocess_image
 from common.utils import get_classes, get_anchors, get_colors, draw_boxes, optimize_tf_gpu
-from tensorflow.keras.utils import multi_gpu_model
+# from tensorflow.keras.utils import multi_gpu_model
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
@@ -105,8 +105,8 @@ class YOLO_np(object):
                 num_anchors/len(yolo_model.output) * (num_classes + 5), \
                 'Mismatch between model and given anchor and class sizes'
         print('{} model, anchors, and classes loaded.'.format(weights_path))
-        if self.gpu_num>=2:
-            yolo_model = multi_gpu_model(yolo_model, gpus=self.gpu_num)
+        # if self.gpu_num>=2:
+        #     yolo_model = multi_gpu_model(yolo_model, gpus=self.gpu_num)
 
         return yolo_model
 
@@ -140,7 +140,8 @@ class YOLO_np(object):
         elif self.model_type.startswith('yolo3_') or self.model_type.startswith('yolo4_') or \
              self.model_type.startswith('tiny_yolo3_') or self.model_type.startswith('tiny_yolo4_'):
             # YOLOv3 & v4 entrance
-            out_boxes, out_classes, out_scores = yolo3_postprocess_np(self.yolo_model.predict(image_data), image_shape, self.anchors, len(self.class_names), self.model_image_size, max_boxes=100, elim_grid_sense=self.elim_grid_sense)
+            predictions = self.yolo_model.predict(image_data)
+            out_boxes, out_classes, out_scores = yolo3_postprocess_np(predictions, image_shape, self.anchors, len(self.class_names), self.model_image_size, max_boxes=100, elim_grid_sense=self.elim_grid_sense)
         elif self.model_type.startswith('yolo2_') or self.model_type.startswith('tiny_yolo2_'):
             # YOLOv2 entrance
             out_boxes, out_classes, out_scores = yolo2_postprocess_np(self.yolo_model.predict(image_data), image_shape, self.anchors, len(self.class_names), self.model_image_size, max_boxes=100, elim_grid_sense=self.elim_grid_sense)
@@ -220,7 +221,7 @@ class YOLO(object):
             assert self.model_image_size[0]%32 == 0, 'Multiples of 32 required'
             assert self.model_image_size[1]%32 == 0, 'Multiples of 32 required'
 
-        image_data = preprocess_image(image, self.model_image_size)
+        image_data =  (image, self.model_image_size)
 
         # prepare origin image shape, (height, width) format
         image_shape = np.array([image.size[1], image.size[0]])
@@ -302,16 +303,17 @@ def detect_video(yolo, video_path, output_path=""):
 
 
 def detect_img(yolo):
-    while True:
-        img = input('Input image filename:')
-        try:
-            image = Image.open(img)
-        except:
-            print('Open Error! Try again!')
-            continue
-        else:
-            r_image = yolo.detect_image(image)
-            r_image.show()
+    # while True:
+    # img = input('Input image filename:')
+    img = './example/004.jpg'
+    try:
+        image = Image.open(img)
+    except:
+        print('Open Error! Try again!')
+        # continue
+    else:
+        r_image = yolo.detect_image(image)
+        r_image.show()
 
 
 if __name__ == '__main__':

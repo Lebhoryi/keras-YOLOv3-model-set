@@ -2,20 +2,22 @@
 # -*- coding=utf-8 -*-
 import numpy as np
 import copy
+from math import exp
 from scipy.special import expit, softmax
 
 from common.wbf_postprocess import weighted_boxes_fusion
 
 def yolo_decode(prediction, anchors, num_classes, input_dims, scale_x_y=None, use_softmax=False):
     '''Decode final layer features to bounding box parameters.'''
-    batch_size = np.shape(prediction)[0]
-    num_anchors = len(anchors)
+    batch_size = np.shape(prediction)[0]  # 1
+    num_anchors = len(anchors)  # 5
 
-    grid_size = np.shape(prediction)[1:3]
+    grid_size = np.shape(prediction)[1:3]  # 5*5
     #check if stride on height & width are same
     assert input_dims[0]//grid_size[0] == input_dims[1]//grid_size[1], 'model stride mismatch.'
-    stride = input_dims[0] // grid_size[0]
+    stride = input_dims[0] // grid_size[0]  # 160/5 = 32 ; 416/13 = 32
 
+    # (1, 5, 5, 30) --> (1, 125, 6)
     prediction = np.reshape(prediction,
                             (batch_size, grid_size[0] * grid_size[1] * num_anchors, num_classes + 5))
 
@@ -28,10 +30,17 @@ def yolo_decode(prediction, anchors, num_classes, input_dims, scale_x_y=None, us
     x_offset = np.reshape(x_offset, (-1, 1))
     y_offset = np.reshape(y_offset, (-1, 1))
 
-    x_y_offset = np.concatenate((x_offset, y_offset), axis=1)
-    x_y_offset = np.tile(x_y_offset, (1, num_anchors))
-    x_y_offset = np.reshape(x_y_offset, (-1, 2))
+    x_y_offset = np.concatenate((x_offset, y_offset), axis=1)  # 169, 2
+
+    res = [[[j, i]] * 5 for i in range(5) for j in range(5)]
+    res = np.array(res).reshape(1, 125, 2)
+
+    x_y_offset = np.tile(x_y_offset, (1, num_anchors))  # 169, 6
+    x_y_offset = np.reshape(x_y_offset, (-1, 2))  # 507, 2
+
     x_y_offset = np.expand_dims(x_y_offset, 0)
+    # print(res.tolist() == x_y_offset.tolist())
+    # print()
 
     ################################
 
@@ -59,7 +68,7 @@ def yolo_decode(prediction, anchors, num_classes, input_dims, scale_x_y=None, us
 
     if use_softmax:
         # Softmax class scores
-        class_scores = softmax(prediction[..., 5:], axis=-1)
+        class_scores = softmax(prediction[..., 5:], axis=1)
     else:
         # Sigmoid class scores
         class_scores = expit(prediction[..., 5:])
@@ -229,7 +238,9 @@ def box_diou(boxes):
     return diou
 
 
-def nms_boxes(boxes, classes, scores, iou_threshold, confidence=0.1, use_diou=True, is_soft=False, use_exp=False, sigma=0.5):
+def nms_boxes(boxes, classes, scores, iou_threshold,
+              confidence=0.1, use_diou=False,
+              is_soft=False, use_exp=False, sigma=0.5):
     nboxes, nclasses, nscores = [], [], []
     for c in set(classes):
         # handle data for one class
