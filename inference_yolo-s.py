@@ -294,8 +294,8 @@ def main():
     logging.getLogger().setLevel(logging.INFO)
     # person.jpg 57; 000001.jpg 63
     # img_path = "./example/person.jpg"
-    img_path = "./example/2.jpg"
-    model_path = './weights/yolo-s.h5'
+    img_path = "./example/person.jpg"
+    model_path = './weights/yolo-fastest.h5'
     # root_path = Path("../../images/001")
     root_path = Path("/home/lebhoryi/Data/VOC/test_voc_imgs")
     label_path = Path("/home/lebhoryi/Data/VOC/VOCdevkit/VOC2007/labels")

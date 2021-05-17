@@ -1,0 +1,25 @@
+Pascal VOC AP evaluation
+horse: AP 0.6494, precision 0.2033, recall 0.7529
+car: AP 0.6358, precision 0.0660, recall 0.7527
+bus: AP 0.6272, precision 0.0975, recall 0.7418
+cat: AP 0.6224, precision 0.1698, recall 0.7402
+bicycle: AP 0.6190, precision 0.1165, recall 0.7448
+motorbike: AP 0.6092, precision 0.1679, recall 0.7385
+train: AP 0.5967, precision 0.0860, recall 0.7482
+person: AP 0.5696, precision 0.1423, recall 0.6990
+dog: AP 0.5428, precision 0.1257, recall 0.7444
+aeroplane: AP 0.5042, precision 0.0487, recall 0.6632
+tvmonitor: AP 0.4810, precision 0.0294, recall 0.7338
+sofa: AP 0.4797, precision 0.0920, recall 0.7448
+sheep: AP 0.4712, precision 0.0704, recall 0.6777
+diningtable: AP 0.4626, precision 0.0912, recall 0.7379
+cow: AP 0.3853, precision 0.1185, recall 0.5656
+boat: AP 0.3843, precision 0.0367, recall 0.6236
+bird: AP 0.3550, precision 0.0902, recall 0.5403
+chair: AP 0.2900, precision 0.0398, recall 0.6521
+pottedplant: AP 0.1850, precision 0.0378, recall 0.4667
+bottle: AP 0.1822, precision 0.0296, recall 0.4264
+mAP@IoU=0.50 result: 48.264888
+mPrec@IoU=0.50 result: 9.296873
+mRec@IoU=0.50 result: 67.471812
+Evaluation time cost: 282.333360s

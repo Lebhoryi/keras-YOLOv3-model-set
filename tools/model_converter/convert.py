@@ -11,6 +11,9 @@ https://github.com/dog-qiuqiu/Yolo-Fastest
 
 Refer README.md for usage details.
 
+Example:
+    python tools/model_converter/convert.py ../Yolo-Fastest/Yolo-Fastest/VOC/yolo-fastest.cfg ../Yolo-Fastest/Yolo-Fastest/VOC/yolo-fastest.weights weights/yolo-fastest.h5
+
 """
 import argparse
 import configparser

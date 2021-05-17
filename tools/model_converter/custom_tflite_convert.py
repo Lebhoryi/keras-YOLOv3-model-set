@@ -220,6 +220,8 @@ def _convert_tf2_model(flags):
   elif flags.keras_model_file:
     custom_object_dict = get_custom_objects()
     model = keras.models.load_model(flags.keras_model_file, custom_objects = custom_object_dict)
+    # upsampling 20210517
+    model.input.set_shape(1 + model.input.shape[1:])
     converter = lite.TFLiteConverterV2.from_keras_model(model)
 
   # Convert the model.
