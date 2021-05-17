@@ -21,6 +21,7 @@ from yolo3.models.yolo3_nano import yolo3_nano_body
 from yolo3.models.yolo3_efficientnet import yolo3_efficientnet_body, tiny_yolo3_efficientnet_body, yolo3lite_efficientnet_body, yolo3lite_spp_efficientnet_body, tiny_yolo3lite_efficientnet_body
 from yolo3.models.yolo3_mobilenetv3_large import yolo3_mobilenetv3large_body, yolo3lite_mobilenetv3large_body, tiny_yolo3_mobilenetv3large_body, tiny_yolo3lite_mobilenetv3large_body
 from yolo3.models.yolo3_mobilenetv3_small import yolo3_mobilenetv3small_body, yolo3lite_mobilenetv3small_body, tiny_yolo3_mobilenetv3small_body, tiny_yolo3lite_mobilenetv3small_body, yolo3_ultralite_mobilenetv3small_body, tiny_yolo3_ultralite_mobilenetv3small_body
+from yolo3.models.yolo3_peleenet import yolo3_peleenet_body, yolo3lite_peleenet_body, tiny_yolo3_peleenet_body, tiny_yolo3lite_peleenet_body, yolo3_ultralite_peleenet_body, tiny_yolo3_ultralite_peleenet_body
 #from yolo3.models.yolo3_resnet50v2 import yolo3_resnet50v2_body, yolo3lite_resnet50v2_body, yolo3lite_spp_resnet50v2_body, tiny_yolo3_resnet50v2_body, tiny_yolo3lite_resnet50v2_body
 
 
@@ -58,6 +59,10 @@ yolo3_model_map = {
     'yolo3_mobilenetv3small': [yolo3_mobilenetv3small_body, 166, None],
     'yolo3_mobilenetv3small_lite': [yolo3lite_mobilenetv3small_body, 166, None],
     'yolo3_mobilenetv3small_ultralite': [yolo3_ultralite_mobilenetv3small_body, 166, None],
+
+    'yolo3_peleenet': [yolo3_peleenet_body, 366, None],
+    'yolo3_peleenet_lite': [yolo3lite_peleenet_body, 366, None],
+    'yolo3_peleenet_ultralite': [yolo3_ultralite_peleenet_body, 366, None],
 
     #'yolo3_resnet50v2': [yolo3_resnet50v2_body, 190, None],
     #'yolo3_resnet50v2_lite': [yolo3lite_resnet50v2_body, 190, None],
@@ -124,6 +129,10 @@ yolo3_tiny_model_map = {
     'tiny_yolo3_mobilenetv3small': [tiny_yolo3_mobilenetv3small_body, 166, None],
     'tiny_yolo3_mobilenetv3small_lite': [tiny_yolo3lite_mobilenetv3small_body, 166, None],
     'tiny_yolo3_mobilenetv3small_ultralite': [tiny_yolo3_ultralite_mobilenetv3small_body, 166, None],
+
+    'tiny_yolo3_peleenet': [tiny_yolo3_peleenet_body, 366, None],
+    'tiny_yolo3_peleenet_lite': [tiny_yolo3lite_peleenet_body, 366, None],
+    'tiny_yolo3_peleenet_ultralite': [tiny_yolo3_ultralite_peleenet_body, 366, None],
 
     #'tiny_yolo3_resnet50v2': [tiny_yolo3_resnet50v2_body, 190, None],
     #'tiny_yolo3_resnet50v2_lite': [tiny_yolo3lite_resnet50v2_body, 190, None],
@@ -260,14 +269,12 @@ def get_yolo3_train_model(model_type, anchors, num_classes, weights_path=None, f
     loss_dict = {'location_loss':location_loss, 'confidence_loss':confidence_loss, 'class_loss':class_loss}
     add_metrics(model, loss_dict)
 
-    model.compile(optimizer=optimizer, loss={
-        # use custom yolo_loss Lambda layer.
-        'yolo_loss': lambda y_true, y_pred: y_pred})
+    model.compile(optimizer=optimizer, loss={'yolo_loss': lambda y_true, y_pred: y_pred}) # use custom yolo_loss Lambda layer
 
     return model
 
 
-def get_yolo3_inference_model(model_type, anchors, num_classes, weights_path=None, input_shape=None, confidence=0.1, elim_grid_sense=False):
+def get_yolo3_inference_model(model_type, anchors, num_classes, weights_path=None, input_shape=None, confidence=0.1, iou_threshold=0.4, elim_grid_sense=False):
     '''create the inference model, for YOLOv3'''
     #K.clear_session() # get a new session
     num_anchors = len(anchors)
@@ -286,7 +293,7 @@ def get_yolo3_inference_model(model_type, anchors, num_classes, weights_path=Non
         print('Load weights {}.'.format(weights_path))
 
     boxes, scores, classes = Lambda(batched_yolo3_postprocess, name='yolo3_postprocess',
-            arguments={'anchors': anchors, 'num_classes': num_classes, 'confidence': confidence, 'elim_grid_sense': elim_grid_sense})(
+            arguments={'anchors': anchors, 'num_classes': num_classes, 'confidence': confidence, 'iou_threshold': iou_threshold, 'elim_grid_sense': elim_grid_sense})(
         [*model_body.output, image_shape])
     model = Model([model_body.input, image_shape], [boxes, scores, classes])
 

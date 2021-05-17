@@ -13,6 +13,7 @@ A general YOLOv4/v3/v2 object detection pipeline inherited from [keras-yolo3-Mob
 - [x] MobilenetV1
 - [x] MobilenetV2
 - [x] MobilenetV3(Large/Small)
+- [x] PeleeNet ([paper](https://arxiv.org/abs/1804.06882))
 - [x] EfficientNet
 - [x] Xception
 - [x] VGG16
@@ -51,7 +52,9 @@ A general YOLOv4/v3/v2 object detection pipeline inherited from [keras-yolo3-Mob
 - [x] Singlescale image input training
 - [x] Multiscale image input training
 - [x] Dynamic learning rate decay (Cosine/Exponential/Polynomial/PiecewiseConstant)
+- [x] Weights Average policy for optimizer (EMA/SWA/Lookahead, valid for TF-2.x with tfa)
 - [x] Mosaic data augmentation
+- [x] GridMask data augmentation ([paper](https://arxiv.org/abs/2001.04086))
 - [x] Multi anchors for single GT (from [YOLOv4](https://arxiv.org/abs/2004.10934))
 - [x] Pruned model training (only valid for TF 1.x)
 - [x] Multi-GPU training with SyncBatchNorm support (valid for TF-2.2 and later)
@@ -104,6 +107,9 @@ A general YOLOv4/v3/v2 object detection pipeline inherited from [keras-yolo3-Mob
 ### make sure to reorder output tensors for YOLOv4 cfg and weights file
 # python tools/model_converter/convert.py --yolo4_reorder cfg/yolov4.cfg weights/yolov4.weights weights/yolov4.h5
 
+### Scaled YOLOv4
+### manually download yolov4-csp.weights from https://drive.google.com/file/d/1NQwz47cW0NUgy7L3_xOKaNEfLoQuq3EL/view?usp=sharing
+# python tools/model_converter/convert.py --yolo4_reorder cfg/yolov4-csp_fixed.cfg weights/yolov4-csp.weights weights/scaled-yolov4-csp.h5
 
 ### Yolo-Fastest
 # wget -O weights/yolo-fastest.weights https://github.com/dog-qiuqiu/Yolo-Fastest/blob/master/Yolo-Fastest/yolo-fastest.weights?raw=true
@@ -222,6 +228,7 @@ usage: train.py [-h] [--model_type MODEL_TYPE] [--anchors_path ANCHORS_PATH]
                 [--val_split VAL_SPLIT] [--classes_path CLASSES_PATH]
                 [--batch_size BATCH_SIZE] [--optimizer {adam,rmsprop,sgd}]
                 [--learning_rate LEARNING_RATE]
+                [--average_type {None,ema,swa,lookahead}]
                 [--decay_type {None,cosine,exponential,polynomial,piecewise_constant}]
                 [--transfer_epoch TRANSFER_EPOCH]
                 [--freeze_level {None,0,1,2}] [--init_epoch INIT_EPOCH]
@@ -264,6 +271,8 @@ optional arguments:
                         default=adam
   --learning_rate LEARNING_RATE
                         Initial learning rate, default=0.001
+  --average_type {None,ema,swa,lookahead}
+                        weights average type, default=None
   --decay_type {None,cosine,exponential,polynomial,piecewise_constant}
                         Learning rate decay type, default=None
   --transfer_epoch TRANSFER_EPOCH
@@ -420,6 +429,7 @@ Some experiment on PascalVOC dataset and comparison:
 | [YOLOv3 Lite-Mobilenet](https://github.com/david8862/keras-YOLOv3-model-set/releases/download/v1.0.0/yolo3_mobilnet_lite_320_voc.tar.gz) | 320x320 | VOC07+12 | VOC07 | 73.47% | 4.51G | 7.77M | 31.8MB | 17ms | Keras on Titan XP |
 | [YOLOv3 Lite-Mobilenet](https://github.com/david8862/keras-YOLOv3-model-set/releases/download/v1.0.0/yolo3_mobilnet_lite_416_voc.tar.gz) | 416x416 | VOC07+12 | VOC07 | 76.55% | 7.60G | 7.77M | 31.8MB | 20ms | Keras on Titan XP |
 | [YOLOv3 Lite-SPP-Mobilenet](https://github.com/david8862/keras-YOLOv3-model-set/releases/download/v1.0.0/yolo3_mobilnet_lite_spp_416_voc.tar.gz) | 416x416 | VOC07+12 | VOC07 | 76.32% | 7.98G | 8.81M | 34MB | 22ms | Keras on Titan XP |
+| [YOLOv3 Lite-PeleeNet](https://github.com/david8862/keras-YOLOv3-model-set/releases/download/v1.3.0/yolo3_peleenet_lite_416_voc.tar.gz) | 416x416 | VOC07+12 | VOC07 | 78.07% | 6.60G | 4.92M | 21MB | 33ms | Keras on Titan XP |
 | [Tiny YOLOv3 Lite-Mobilenet](https://github.com/david8862/keras-YOLOv3-model-set/releases/download/v1.0.0/tiny_yolo3_mobilnet_lite_320_voc.tar.gz) | 320x320 | VOC07+12 | VOC07 | 69.10% | 2.93G | 4.92M | 20.1MB | 9ms | Keras on Titan XP |
 | [Tiny YOLOv3 Lite-Mobilenet](https://github.com/david8862/keras-YOLOv3-model-set/releases/download/v1.0.0/tiny_yolo3_mobilnet_lite_416_voc.tar.gz) | 416x416 | VOC07+12 | VOC07 | 72.90% | 4.95G | 4.92M | 20.1MB | 11ms | Keras on Titan XP |
 | [Tiny YOLOv3 Lite-Mobilenet with GIoU loss](https://github.com/david8862/keras-YOLOv3-model-set/releases/download/v1.0.0/tiny_yolo3_mobilnet_lite_giou_416_voc.tar.gz) | 416x416 | VOC07+12 | VOC07 | 72.92% | 4.95G | 4.92M | 20.1MB | 11ms | Keras on Titan XP |
@@ -434,7 +444,11 @@ Some experiment on PascalVOC dataset and comparison:
 | [SSD,VGG-16](https://github.com/pierluigiferrari/ssd_keras) | 300x300 | VOC07+12 | VOC07	| 77.5% |  |  | 201MB | 39fps | Keras on Titan X |
 
 
-**NOTE**: mAP/AP is evaluated with "Weighted-Distance-Cluster-NMS" post process, which has better performance than Traditional NMS
+**NOTE**:
+1. mAP/AP is evaluated with "Weighted-Distance-Cluster-NMS" post process, which has better performance than Traditional NMS
+
+2. If you meet any model loading problem with these pretrained weights due to h5 format compatibility issue, try to run "Model dump" with it again to regenerate the inference model.
+
 
 ### Demo
 1. [yolo.py](https://github.com/david8862/keras-YOLOv3-model-set/blob/master/yolo.py)
@@ -451,7 +465,7 @@ video detection mode
 For video detection mode, you can use "input=0" to capture live video from web camera and "output=<video name>" to dump out detection result to another video
 
 ### Tensorflow model convert
-Using [keras_to_tensorflow.py](https://github.com/david8862/keras-YOLOv3-model-set/tree/master/tools/model_converter/keras_to_tensorflow.py) to convert the tf.keras .h5 model to tensorflow frozen pb model (only for TF 1.x):
+Using [keras_to_tensorflow.py](https://github.com/david8862/keras-YOLOv3-model-set/tree/master/tools/model_converter/keras_to_tensorflow.py) to convert the tf.keras .h5 model to tensorflow frozen pb model:
 ```
 # python keras_to_tensorflow.py
     --input_model="path/to/keras/model.h5"
@@ -476,7 +490,6 @@ See [on-device inference](https://github.com/david8862/keras-YOLOv3-model-set/tr
 
 
 ### TODO
-- [ ] DropBlock on YOLO head
 - [ ] Gaussian YOLOv3 loss
 - [ ] support Quantization aware training
 - [ ] provide more imagenet pretrained backbone (e.g. shufflenet, shufflenetv2), see [Training backbone](https://github.com/david8862/keras-YOLOv3-model-set/tree/master/common/backbones/imagenet_training)

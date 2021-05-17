@@ -6,11 +6,12 @@ Retrain the YOLO model for your own dataset.
 import os, time, random, argparse
 import numpy as np
 import tensorflow.keras.backend as K
-from tensorflow.keras.utils import multi_gpu_model
+#from tensorflow.keras.utils import multi_gpu_model
 from tensorflow.keras.callbacks import TensorBoard, ModelCheckpoint, ReduceLROnPlateau, LearningRateScheduler, EarlyStopping, TerminateOnNaN, LambdaCallback
 from tensorflow_model_optimization.sparsity import keras as sparsity
 
 from yolo5.model import get_yolo5_train_model
+from yolo5.data import yolo5_data_generator_wrapper, Yolo5DataGenerator
 from yolo3.model import get_yolo3_train_model
 from yolo3.data import yolo3_data_generator_wrapper, Yolo3DataGenerator
 from yolo2.model import get_yolo2_train_model
@@ -89,11 +90,11 @@ def main(args):
         # Scaled-YOLOv4 & YOLOv5 entrance, use yolo5 submodule but now still yolo3 data generator
         # TODO: create new yolo5 data generator to apply YOLOv5 anchor assignment
         get_train_model = get_yolo5_train_model
-        data_generator = yolo3_data_generator_wrapper
+        data_generator = yolo5_data_generator_wrapper
 
         # tf.keras.Sequence style data generator
-        #train_data_generator = Yolo3DataGenerator(dataset[:num_train], args.batch_size, input_shape, anchors, num_classes, args.enhance_augment, rescale_interval, args.multi_anchor_assign)
-        #val_data_generator = Yolo3DataGenerator(dataset[num_train:], args.batch_size, input_shape, anchors, num_classes, multi_anchor_assign=args.multi_anchor_assign)
+        #train_data_generator = Yolo5DataGenerator(dataset[:num_train], args.batch_size, input_shape, anchors, num_classes, args.enhance_augment, rescale_interval, args.multi_anchor_assign)
+        #val_data_generator = Yolo5DataGenerator(dataset[num_train:], args.batch_size, input_shape, anchors, num_classes, multi_anchor_assign=args.multi_anchor_assign)
 
         tiny_version = False
     elif args.model_type.startswith('yolo3_') or args.model_type.startswith('yolo4_'):
@@ -149,7 +150,7 @@ def main(args):
         callbacks = callbacks + pruning_callbacks
 
     # prepare optimizer
-    optimizer = get_optimizer(args.optimizer, args.learning_rate, decay_type=None)
+    optimizer = get_optimizer(args.optimizer, args.learning_rate, average_type=None, decay_type=None)
 
     # support multi-gpu training
     if args.gpu_num >= 2:
@@ -189,13 +190,30 @@ def main(args):
     # Wait 2 seconds for next stage
     time.sleep(2)
 
-    if args.decay_type:
-        # rebuild optimizer to apply learning rate decay, only after
-        # unfreeze all layers
-        callbacks.remove(reduce_lr)
+    if args.decay_type or args.average_type:
+        # rebuild optimizer to apply learning rate decay or weights averager,
+        # only after unfreeze all layers
+        if args.decay_type:
+            callbacks.remove(reduce_lr)
+
+        if args.average_type == 'ema' or args.average_type == 'swa':
+            # weights averager need tensorflow-addons,
+            # which request TF 2.x and have version compatibility
+            import tensorflow_addons as tfa
+            callbacks.remove(checkpoint)
+            avg_checkpoint = tfa.callbacks.AverageModelCheckpoint(filepath=os.path.join(log_dir, 'ep{epoch:03d}-loss{loss:.3f}-val_loss{val_loss:.3f}.h5'),
+                                                                  update_weights=True,
+                                                                  monitor='val_loss',
+                                                                  mode='min',
+                                                                  verbose=1,
+                                                                  save_weights_only=False,
+                                                                  save_best_only=True,
+                                                                  period=1)
+            callbacks.append(avg_checkpoint)
+
         steps_per_epoch = max(1, num_train//args.batch_size)
         decay_steps = steps_per_epoch * (args.total_epoch - args.init_epoch - args.transfer_epoch)
-        optimizer = get_optimizer(args.optimizer, args.learning_rate, decay_type=args.decay_type, decay_steps=decay_steps)
+        optimizer = get_optimizer(args.optimizer, args.learning_rate, average_type=args.average_type, decay_type=args.decay_type, decay_steps=decay_steps)
 
     # Unfreeze the whole network for further tuning
     # NOTE: more GPU memory is required after unfreezing the body
@@ -262,6 +280,8 @@ if __name__ == '__main__':
         help = "optimizer for training (adam/rmsprop/sgd), default=%(default)s")
     parser.add_argument('--learning_rate', type=float, required=False, default=1e-3,
         help = "Initial learning rate, default=%(default)s")
+    parser.add_argument('--average_type', type=str, required=False, default=None, choices=[None, 'ema', 'swa', 'lookahead'],
+        help = "weights average type, default=%(default)s")
     parser.add_argument('--decay_type', type=str, required=False, default=None, choices=[None, 'cosine', 'exponential', 'polynomial', 'piecewise_constant'],
         help = "Learning rate decay type, default=%(default)s")
     parser.add_argument('--transfer_epoch', type=int, required=False, default=20,

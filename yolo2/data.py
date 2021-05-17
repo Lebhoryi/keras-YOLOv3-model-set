@@ -5,8 +5,9 @@ import numpy as np
 import random, math
 from PIL import Image
 from tensorflow.keras.utils import Sequence
-from common.data_utils import normalize_image, letterbox_resize, random_resize_crop_pad, reshape_boxes, random_hsv_distort, random_horizontal_flip, random_vertical_flip, random_grayscale, random_brightness, random_chroma, random_contrast, random_sharpness, random_blur, random_motion_blur, random_mosaic_augment
+from common.data_utils import random_mosaic_augment
 from common.utils import get_multiscale_list
+from yolo3.data import get_ground_truth_data
 
 
 def transform_box_info(boxes, image_size):
@@ -23,83 +24,6 @@ def transform_box_info(boxes, image_size):
     boxes = np.concatenate((boxes_xy, boxes_wh, boxes[..., 4:5]), axis=-1)
 
     return boxes
-
-
-def get_ground_truth_data(annotation_line, input_shape, augment=True, max_boxes=100):
-    '''random preprocessing for real-time data augmentation'''
-    line = annotation_line.split()
-    image = Image.open(line[0])
-    image_size = image.size
-    model_input_size = tuple(reversed(input_shape))
-    boxes = np.array([np.array(list(map(int,box.split(',')))) for box in line[1:]])
-
-    if not augment:
-        new_image, padding_size, offset = letterbox_resize(image, target_size=model_input_size, return_padding_info=True)
-        image_data = np.array(new_image)
-        image_data = normalize_image(image_data)
-
-        # reshape boxes
-        boxes = reshape_boxes(boxes, src_shape=image_size, target_shape=model_input_size, padding_shape=padding_size, offset=offset)
-
-        if len(boxes)>max_boxes:
-            boxes = boxes[:max_boxes]
-
-        # fill in box data
-        box_data = np.zeros((max_boxes,5))
-        if len(boxes)>0:
-            box_data[:len(boxes)] = boxes
-
-        return image_data, box_data
-
-    # random resize image and crop|padding to target size
-    image, padding_size, padding_offset = random_resize_crop_pad(image, target_size=model_input_size)
-
-    # random horizontal flip image
-    image, horizontal_flip = random_horizontal_flip(image)
-
-    # random adjust brightness
-    image = random_brightness(image)
-
-    # random adjust color level
-    image = random_chroma(image)
-
-    # random adjust contrast
-    image = random_contrast(image)
-
-    # random adjust sharpness
-    image = random_sharpness(image)
-
-    # random convert image to grayscale
-    image = random_grayscale(image)
-
-    # random do normal blur to image
-    #image = random_blur(image)
-
-    # random do motion blur to image
-    #image = random_motion_blur(image, prob=0.2)
-
-    # random vertical flip image
-    image, vertical_flip = random_vertical_flip(image)
-
-    # random distort image in HSV color space
-    # NOTE: will cost more time for preprocess
-    #       and slow down training speed
-    #image = random_hsv_distort(image)
-
-    # reshape boxes based on augment
-    boxes = reshape_boxes(boxes, src_shape=image_size, target_shape=model_input_size, padding_shape=padding_size, offset=padding_offset, horizontal_flip=horizontal_flip, vertical_flip=vertical_flip)
-
-    if len(boxes)>max_boxes:
-        boxes = boxes[:max_boxes]
-
-    # prepare image & box data
-    image_data = np.array(image)
-    image_data = normalize_image(image_data)
-    box_data = np.zeros((max_boxes,5))
-    if len(boxes)>0:
-        box_data[:len(boxes)] = boxes
-
-    return image_data, box_data
 
 
 def preprocess_true_boxes(true_boxes, anchors, input_shape, num_classes, multi_anchor_assign, iou_thresh=0.2):
@@ -128,7 +52,7 @@ def preprocess_true_boxes(true_boxes, anchors, input_shape, num_classes, multi_a
         y_true feature map array with shape [conv_height, conv_width, num_anchors, 6]
         in form of relative x, y, w, h, objectness, class
     """
-    assert (true_boxes[..., 4]<num_classes).all(), 'class id must be less than num_classes'
+    assert (true_boxes[..., 4] < num_classes).all(), 'class id must be less than num_classes'
     height, width = input_shape
     num_anchors = len(anchors)
     # Downsampling factor of 5x 2-stride max_pools == 32.
@@ -144,8 +68,8 @@ def preprocess_true_boxes(true_boxes, anchors, input_shape, num_classes, multi_a
     input_shape = np.array(input_shape, dtype='int32')
     boxes_xy = (true_boxes[..., 0:2] + true_boxes[..., 2:4]) // 2
     boxes_wh = true_boxes[..., 2:4] - true_boxes[..., 0:2]
-    true_boxes[..., 0:2] = boxes_xy/input_shape[::-1]
-    true_boxes[..., 2:4] = boxes_wh/input_shape[::-1]
+    true_boxes[..., 0:2] = boxes_xy / input_shape[::-1]
+    true_boxes[..., 2:4] = boxes_wh / input_shape[::-1]
 
     num_box_params = true_boxes.shape[1]
     y_true = np.zeros(
@@ -154,18 +78,18 @@ def preprocess_true_boxes(true_boxes, anchors, input_shape, num_classes, multi_a
 
     for box in true_boxes:
         # bypass invalid true_box, if w,h is 0
-        if box[2]==0 and box[3]==0:
+        if box[2] == 0 and box[3] == 0:
             continue
 
         box_class = box[4:5]
-        i = np.floor(box[1]*conv_height).astype('int')
-        j = np.floor(box[0]*conv_width).astype('int')
+        i = np.floor(box[1] * conv_height).astype('int')
+        j = np.floor(box[0] * conv_width).astype('int')
         best_iou = 0
         #best_anchor = 0
         selected_anchors = []
         for k, anchor in enumerate(anchors):
             # Find IOU between box shifted to origin and anchor box.
-            box_maxes = box[2:4]*input_shape[::-1] / 2.
+            box_maxes = box[2:4] * input_shape[::-1] / 2.
             box_mins = -box_maxes
             anchor_maxes = (anchor / 2.)
             anchor_mins = -anchor_maxes
@@ -174,7 +98,7 @@ def preprocess_true_boxes(true_boxes, anchors, input_shape, num_classes, multi_a
             intersect_maxes = np.minimum(box_maxes, anchor_maxes)
             intersect_wh = np.maximum(intersect_maxes - intersect_mins, 0.)
             intersect_area = intersect_wh[0] * intersect_wh[1]
-            box_area = (box[2]*input_shape[1]) * (box[3]*input_shape[0])
+            box_area = (box[2] * input_shape[1]) * (box[3] * input_shape[0])
             anchor_area = anchor[0] * anchor[1]
             iou = intersect_area / (box_area + anchor_area - intersect_area)
 
@@ -281,6 +205,7 @@ class Yolo2DataGenerator(Sequence):
         # shuffle annotation data on epoch end
         if self.shuffle == True:
             np.random.shuffle(self.annotation_lines)
+
 
 
 def yolo2_data_generator(annotation_lines, batch_size, input_shape, anchors, num_classes, enhance_augment, rescale_interval, multi_anchor_assign):

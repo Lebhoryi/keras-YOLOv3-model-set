@@ -3,6 +3,7 @@
 """Data process utility functions."""
 import numpy as np
 import random
+import math
 import cv2
 from PIL import Image, ImageEnhance, ImageFilter
 import imgaug.augmenters as iaa
@@ -401,6 +402,216 @@ def random_motion_blur(image, prob=.1):
     return image
 
 
+def random_rotate(image, boxes, rotate_range=20, prob=0.1):
+    """
+    Random rotate for image and bounding boxes
+
+    reference:
+        https://github.com/ultralytics/yolov5/blob/master/utils/datasets.py#L824
+
+    NOTE: bbox area will be expand in many cases after
+          rotate, like:
+     _____________________________
+    |                             |
+    |                             |
+    |    _____________            |
+    |   |             |           |
+    |   |   _______   |           |
+    |   |  /\      \  |           |
+    |   | /  \______\ |           |
+    |   | |  |      | |           |
+    |   | |__|______| |           |
+    |   |             |           |
+    |   |_____________|           |
+    |                             |
+    |                             |
+    ------------------------------
+
+    # Arguments
+        image: origin image for rotate
+            PIL Image object containing image data
+        boxes: Ground truth object bounding boxes,
+            numpy array of shape (num_boxes, 5),
+            box format (xmin, ymin, xmax, ymax, cls_id).
+
+        prob: probability for random rotate,
+            scalar to control the rotate probability.
+
+    # Returns
+        image: rotated PIL Image object.
+        boxes: rotated bounding box numpy array
+    """
+    if rotate_range:
+        angle = random.gauss(mu=0.0, sigma=rotate_range)
+    else:
+        angle = 0.0
+
+    warpAffine = rand() < prob
+    if warpAffine and rotate_range:
+        width, height = image.size
+        scale = 1.0
+
+        # get rotate matrix and apply for image
+        M = cv2.getRotationMatrix2D(center=(width//2, height//2), angle=angle, scale=scale)
+        img = cv2.warpAffine(np.array(image), M, (width, height), flags=cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT, borderValue=0)#, borderValue=(114, 114, 114))
+
+        # rotate boxes coordinates
+        n = len(boxes)
+        if n:
+            # form up 4 corner points ([xmin,ymin], [xmax,ymax], [xmin,ymax], [xmax,ymin])
+            # from (xmin, ymin, xmax, ymax), every coord is [x,y,1] format for applying
+            # rotation matrix
+            corner_points = np.ones((n * 4, 3))
+            corner_points[:, :2] = boxes[:, [0, 1, 2, 3, 0, 3, 2, 1]].reshape(n * 4, 2) # [xmin,ymin], [xmax,ymax], [xmin,ymax], [xmax,ymin]
+
+            # apply rotation transform
+            corner_points = corner_points @ M.T
+
+            # pick rotated corner (x,y) and reshape to 1 column
+            corner_points = corner_points[:, :2].reshape(n, 8)
+            # select x lines and y lines
+            corner_x = corner_points[:, [0, 2, 4, 6]]
+            corner_y = corner_points[:, [1, 3, 5, 7]]
+
+            # create new bounding boxes according to rotated corner points boundary
+            rotate_boxes = np.concatenate((corner_x.min(axis=-1), corner_y.min(axis=-1), corner_x.max(axis=-1), corner_y.max(axis=-1))).reshape(4, n).T
+
+            # clip boxes with image size
+            # NOTE: use (width-1) & (height-1) as max to avoid index overflow
+            rotate_boxes[:, [0, 2]] = rotate_boxes[:, [0, 2]].clip(0, width-1)
+            rotate_boxes[:, [1, 3]] = rotate_boxes[:, [1, 3]].clip(0, height-1)
+
+            # apply new boxes
+            boxes[:, :4] = rotate_boxes
+
+            # filter candidates
+            #i = box_candidates(box1=boxes[:, :4].T * scale, box2=rotate_boxes.T)
+            #boxes = boxes[i]
+            #boxes[:, :4] = rotate_boxes[i]
+
+        image = Image.fromarray(img)
+
+    return image, boxes
+
+
+
+def box_candidates(box1, box2, wh_thr=2, ar_thr=20, area_thr=0.1):  # box1(4,n), box2(4,n)
+    # Compute candidate boxes: box1 before augment, box2 after augment, wh_thr (pixels), aspect_ratio_thr, area_ratio
+    w1, h1 = box1[2] - box1[0], box1[3] - box1[1]
+    w2, h2 = box2[2] - box2[0], box2[3] - box2[1]
+    ar = np.maximum(w2 / (h2 + 1e-16), h2 / (w2 + 1e-16))  # aspect ratio
+    return (w2 > wh_thr) & (h2 > wh_thr) & (w2 * h2 / (w1 * h1 + 1e-16) > area_thr) & (ar < ar_thr)  # candidates
+
+
+
+class Grid(object):
+    def __init__(self, d1, d2, rotate=360, ratio=0.5, mode=1, prob=1.):
+        self.d1 = d1
+        self.d2 = d2
+        self.rotate = rotate
+        self.ratio = ratio
+        self.mode=mode
+        self.st_prob = self.prob = prob
+
+    def set_prob(self, epoch, max_epoch):
+        self.prob = self.st_prob * min(1, epoch / max_epoch)
+
+    def __call__(self, img):
+        h = img.size[1]
+        w = img.size[0]
+
+        if np.random.rand() > self.prob:
+            return img, np.ones((h, w), np.float32)
+
+        # 1.5 * h, 1.5 * w works fine with the squared images
+        # But with rectangular input, the mask might not be able to recover back to the input image shape
+        # A square mask with edge length equal to the diagnoal of the input image
+        # will be able to cover all the image spot after the rotation. This is also the minimum square.
+        hh = math.ceil((math.sqrt(h*h + w*w)))
+
+        d = np.random.randint(self.d1, self.d2)
+        #d = self.d
+
+        # maybe use ceil? but i guess no big difference
+        self.l = math.ceil(d*self.ratio)
+
+        mask = np.ones((hh, hh), np.float32)
+        st_h = np.random.randint(d)
+        st_w = np.random.randint(d)
+        for i in range(-1, hh//d+1):
+                s = d*i + st_h
+                t = s+self.l
+                s = max(min(s, hh), 0)
+                t = max(min(t, hh), 0)
+                mask[s:t,:] *= 0
+        for i in range(-1, hh//d+1):
+                s = d*i + st_w
+                t = s+self.l
+                s = max(min(s, hh), 0)
+                t = max(min(t, hh), 0)
+                mask[:,s:t] *= 0
+        r = np.random.randint(self.rotate)
+        mask = Image.fromarray(np.uint8(mask))
+        mask = mask.rotate(r)
+        mask = np.asarray(mask)
+        mask = mask[(hh-h)//2:(hh-h)//2+h, (hh-w)//2:(hh-w)//2+w]
+
+        if self.mode == 1:
+            mask = 1-mask
+
+        #mask = mask.expand_as(img)
+        img = np.array(img) * np.expand_dims(mask, -1)
+
+        return Image.fromarray(img), mask
+
+
+def random_gridmask(image, boxes, prob=0.2):
+    """
+    Random add GridMask augment for image
+
+    reference:
+        https://arxiv.org/abs/2001.04086
+        https://github.com/Jia-Research-Lab/GridMask/blob/master/imagenet_grid/utils/grid.py
+
+    # Arguments
+        image: origin image for GridMask
+            PIL Image object containing image data
+        boxes: Ground truth object bounding boxes,
+            numpy array of shape (num_boxes, 5),
+            box format (xmin, ymin, xmax, ymax, cls_id).
+
+        prob: probability for GridMask,
+            scalar to control the GridMask probability.
+
+    # Returns
+        image: adjusted PIL Image object.
+        boxes: rotated bounding box numpy array
+    """
+    grid = Grid(d1=image.size[0]//7, d2=image.size[0]//3, rotate=360, ratio=0.5, prob=prob)
+    image, mask = grid(image)
+
+    n = len(boxes)
+    if n:
+        # check box width and height to discard invalid box
+        boxes_w = boxes[:, 2] - boxes[:, 0]
+        boxes_h = boxes[:, 3] - boxes[:, 1]
+        boxes = boxes[np.logical_and(boxes_w>1, boxes_h>1)] # discard invalid box
+
+        new_boxes = []
+        # filter out box which is heavily masked
+        for box in boxes:
+            xmin, ymin, xmax, ymax = box[:4]
+            box_mask = mask[ymin:ymax, xmin:xmax]
+            box_area = (xmax - xmin) * (ymax - ymin)
+            box_valid_area = box_mask.sum()
+            if box_valid_area > (box_area * 0.3): # only keep box when valid_area > 30%
+                new_boxes.append(box)
+
+        boxes = np.vstack(new_boxes) if len(new_boxes) >= 1 else np.array([])
+
+    return image, boxes
+
+
 def merge_mosaic_bboxes(bboxes, crop_x, crop_y, image_size):
     # adjust & merge mosaic samples bboxes as following area order:
     # -----------
@@ -731,7 +942,23 @@ def normalize_image(image):
     # Returns
         image: numpy image array with dtype=float, 0.0 ~ 1.0
     """
-    image = image / 255.0
+    image = image.astype(np.float32) / 255.0
+
+    return image
+
+
+def denormalize_image(image):
+    """
+    Denormalize image array from 0.0 ~ 1.0
+    to 0 ~ 255
+
+    # Arguments
+        image: normalized image array with dtype=float, -1.0 ~ 1.0
+
+    # Returns
+        image: numpy image array with dtype=uint8, 0 ~ 255
+    """
+    image = (image * 255.0).astype(np.uint8)
 
     return image
 

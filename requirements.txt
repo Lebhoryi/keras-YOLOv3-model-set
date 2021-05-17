@@ -1,10 +1,13 @@
 numpy==1.17.5
+setuptools
 scipy
+scikit-learn
 opencv-python
 opencv-contrib-python
 tensorflow-gpu
 keras_applications
 tensorflow-model-optimization
+tensorflow-addons
 matplotlib
 tqdm
 pillow
