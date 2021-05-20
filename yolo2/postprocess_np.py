@@ -19,4 +19,3 @@ def yolo2_postprocess_np(yolo_outputs, image_shape, anchors, num_classes, model_
     boxes = yolo_adjust_boxes(boxes, image_shape)
 
     return boxes, classes, scores
-

@@ -126,6 +126,7 @@ def yolo_predict_tflite(interpreter, image, anchors, num_classes, conf_threshold
         output_data = interpreter.get_tensor(output_detail['index'])
         prediction.append(output_data)
 
+    # 排序是为了保证格子顺序，和预选框顺序对应。
     prediction.sort(key=lambda x: len(x[0]))
     if len(anchors) == 5:
         # YOLOv2 use 5 anchors and have only 1 prediction
